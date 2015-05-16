@@ -3,18 +3,15 @@
 #include "Wire.h"
 #include "PID_v1.h"
 
-MPU6050 mpu;
-
 // Use arrays to simplify the code
 const int arraySize = 6;
 const int avgArraySize = 100;
-
+// PID uses doubles, MPU commands are int16_ts
 int16_t receivedData[arraySize] = { 0 };
 double dreceivedData[arraySize] = { 0 };
-
 int16_t offsets[arraySize] = { 0 };
 double doffsets[arraySize] = { 0 };
-
+// Store values in a circular buffer to calculate averages
 int avgIndexCount[arraySize] = { 0 };
 double offsetArray[arraySize][avgArraySize] = { 0 };
 double readValueArray[arraySize][avgArraySize] = { 0 };
@@ -25,7 +22,6 @@ double XYAccSetpoint = 0;
 double ZAccSetpoint = 16384;
 // Set point for gyros are 0
 double gyroSetpoint = 0;
-
 // Use array of setpoints to ease the setup process
 double dsetpoint[arraySize] = { XYAccSetpoint, XYAccSetpoint, ZAccSetpoint,
                                 gyroSetpoint,  gyroSetpoint,  gyroSetpoint };
@@ -34,9 +30,11 @@ double dsetpoint[arraySize] = { XYAccSetpoint, XYAccSetpoint, ZAccSetpoint,
 double kp = 0.03125;
 double ki = 0.25;
 double kd = 0;
-
-// Set up PID linked to x axis accelerometer
+// Array of pointers to PIDs used throughout
 PID* tuningController[arraySize] = { NULL };
+
+// MPU to calibrate, using int0 for interrupts
+MPU6050 mpu;
 
 // Forward declarations
 void switchAndUpdateOffsets(const size_t& index);
@@ -46,6 +44,9 @@ void printCalibrationDataToSerial();
 
 void setup()
 {
+  // Enable serial
+  Serial.begin(115200);
+
   // Create and setup the PID controllers
   for (size_t i = 0; i < arraySize; ++i)
   {
@@ -54,24 +55,21 @@ void setup()
     tuningController[i]->SetOutputLimits(-15000, 15000);
     tuningController[i]->SetMode(AUTOMATIC);
   }
+  // Start the I2C bus
   Wire.begin();
-
-  // Enable serial
-  Serial.begin(115200);
 
   // Start the MPU
   Serial.println("Initializing MPU");
   mpu.initialize();
-
   // Wait for a bit while initialising
   delay(10);
-
   // Check if connection is up, if not retry
   while (!mpu.testConnection())
   {
-    delay(100);
+    delay(1000);
     Serial.println("Retrying MPU connection");
     mpu.initialize();
+    delay(10);
   }
 }
 
