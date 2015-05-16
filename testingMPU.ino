@@ -15,7 +15,7 @@ double dreceivedData[arraySize] = { 0 };
 int16_t offsets[arraySize] = { 0 };
 double doffsets[arraySize] = { 0 };
 
-double avgIndexCount[arraySize] = { 0 };
+int avgIndexCount[arraySize] = { 0 };
 double offsetArray[arraySize][avgArraySize] = { 0 };
 double readValueArray[arraySize][avgArraySize] = { 0 };
 
@@ -40,8 +40,9 @@ PID* tuningController[arraySize] = { NULL };
 
 // Forward declarations
 void switchAndUpdateOffsets(const size_t& index);
-double avgOffsetFromIndex(const double& index);
-double avgValueFromIndex(const double& index);
+double avgOffsetFromIndex(const size_t& index);
+double avgValueFromIndex(const size_t& index);
+void printCalibrationDataToSerial();
 
 void setup()
 {
@@ -101,8 +102,8 @@ void loop()
     {
       switchAndUpdateOffsets(i);
       // Store the most recently read value and new offset to averaging arrays
-      offsetArray[i][avgIndexCount] = doffsets[i];
-      readValueArray[i][avgIndexCount] = dreceivedData[i];
+      offsetArray[i][avgIndexCount[i]] = doffsets[i];
+      readValueArray[i][avgIndexCount[i]] = dreceivedData[i];
       avgIndexCount[i]++;
       if (avgIndexCount[i] >= avgArraySize)
       {
@@ -147,7 +148,7 @@ void switchAndUpdateOffsets(const size_t& index)
   }
 }
 
-double avgOffsetFromIndex(const double& index)
+double avgOffsetFromIndex(const size_t& index)
 {
   double sum = 0;
   for (size_t i = 0; i < avgArraySize; ++i)
@@ -158,7 +159,7 @@ double avgOffsetFromIndex(const double& index)
   return (sum / static_cast<double>(avgArraySize));
 }
 
-double avgValueFromIndex(const double& index)
+double avgValueFromIndex(const size_t& index)
 {
   double sum = 0;
   for (size_t i = 0; i < avgArraySize; ++i)
