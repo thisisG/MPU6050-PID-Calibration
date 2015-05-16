@@ -16,8 +16,8 @@ int16_t offsets[arraySize] = { 0 };
 double doffsets[arraySize] = { 0 };
 
 double avgIndexCount[arraySize] = { 0 };
-double avgOffsetValue[arraySize][avgArraySize] = { 0 };
-double avgReadValue[arraySize][avgArraySize] = { 0 };
+double offsetArray[arraySize][avgArraySize] = { 0 };
+double readValueArray[arraySize][avgArraySize] = { 0 };
 
 // Set point for XY axis is 0 if perfectly level
 double XYAccSetpoint = 0;
@@ -39,12 +39,14 @@ double kd = 0;
 PID* tuningController[arraySize] = { NULL };
 
 // Forward declarations
-void switchAndUpdateOffsets(const size_t index);
+void switchAndUpdateOffsets(const size_t& index);
+double avgOffsetFromIndex(const double& index);
+double avgValueFromIndex(const double& index);
 
 void setup()
 {
   // Create and setup the PID controllers
-  for (size_t i = 0; i < arraySize; i++)
+  for (size_t i = 0; i < arraySize; ++i)
   {
     tuningController[i] = new PID(&(dreceivedData[i]), &(doffsets[i]),
                                   &(dsetpoint[i]), kp, ki, kd, DIRECT);
@@ -74,6 +76,8 @@ void setup()
 
 void loop()
 {
+  static unsigned long lastSerialUpdate = 0;
+  static const unsigned long deltaTSerialUpdate = 1000;
   // Get data from MPU
   // [0]: xAccelerometer
   // [1]: yAccelerometer
@@ -85,35 +89,37 @@ void loop()
                  &receivedData[3], &receivedData[4], &receivedData[5]);
 
   // Convert to doubles for PIDs
-  for (size_t i = 0; i < arraySize; i++)
+  for (size_t i = 0; i < arraySize; ++i)
   {
     dreceivedData[i] = static_cast<double>(receivedData[i]);
   }
 
   // Check and update PIDs
-  for (size_t i = 0; i < arraySize; i++)
+  for (size_t i = 0; i < arraySize; ++i)
   {
     if (tuningController[i]->Compute())
     {
       switchAndUpdateOffsets(i);
-      // Add the new offset value to offset log-array
-      avgOffsetValue[i][avgIndexCount] = doffsets[i];
-      avgReadValue[i][avgIndexCount] = dreceivedData[i];
+      // Store the most recently read value and new offset to averaging arrays
+      offsetArray[i][avgIndexCount] = doffsets[i];
+      readValueArray[i][avgIndexCount] = dreceivedData[i];
       avgIndexCount[i]++;
       if (avgIndexCount[i] >= avgArraySize)
       {
         avgIndexCount[i] = 0;
       }
-      // Output acceleration x axis and offset
-      Serial.print("receivedData[i]: ");
-      Serial.print(receivedData[i]);
-      Serial.print(", offsets[i]: ");
-      Serial.println(offsets[i]);
     }
+  }
+
+  // Check if time to send update of average values over serial
+  if ((millis() - lastSerialUpdate) > deltaTSerialUpdate)
+  {
+    lastSerialUpdate = millis();
+    printCalibrationDataToSerial();
   }
 }
 
-void switchAndUpdateOffsets(const size_t index)
+void switchAndUpdateOffsets(const size_t& index)
 {
   offsets[index] = static_cast<int16_t>(doffsets[index]);
   switch (index)
@@ -141,4 +147,44 @@ void switchAndUpdateOffsets(const size_t index)
   }
 }
 
-double getArrayAverage(const double &)
+double avgOffsetFromIndex(const double& index)
+{
+  double sum = 0;
+  for (size_t i = 0; i < avgArraySize; ++i)
+  {
+    sum += offsetArray[index][i];
+  }
+
+  return (sum / static_cast<double>(avgArraySize));
+}
+
+double avgValueFromIndex(const double& index)
+{
+  double sum = 0;
+  for (size_t i = 0; i < avgArraySize; ++i)
+  {
+    sum += readValueArray[index][i];
+  }
+
+  return (sum / static_cast<double>(avgArraySize));
+}
+
+void printCalibrationDataToSerial()
+{
+  Serial.println(
+      "avgXacc \t avgYacc \t avgZacc \t avgXgyro \t avgYgyro \t avgZgyro");
+  for (size_t i = 0; i < arraySize; ++i)
+  {
+    Serial.print(avgValueFromIndex(i));
+    Serial.print("\t");
+  }
+  Serial.println("");
+  Serial.println("avgXaccOff \t avgYaccOff \t avgZaccOff \t avgXgyroOff \t "
+                 "avgXgyroOff \t avgXgyroOff");
+  for (size_t i = 0; i < arraySize; ++i)
+  {
+    Serial.print(avgOffsetFromIndex(i));
+    Serial.print("\t");
+  }
+  Serial.println("");
+}
