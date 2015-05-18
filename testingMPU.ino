@@ -2,10 +2,18 @@
 #include "MPU6050.h"
 #include "Wire.h"
 #include "PID_v1.h"
+#include <avr/wdt.h>
+
+// Uncomment to provide human readable output
+//#define HUMAN_READABLE_OUTPUT
+// Uncomment to provide parsable output in CSV format
+#define PARSABLE_OUTPUT
+// Uncomment to provide debug ouput
+//#define DEBUG_OUTPUT
 
 // Use arrays to simplify the code
 const int arraySize = 6;
-const int avgArraySize = 100;
+const int avgArraySize = 15;
 // PID uses doubles, MPU commands are int16_ts
 int16_t receivedData[arraySize] = { 0 };
 double dreceivedData[arraySize] = { 0 };
@@ -31,52 +39,61 @@ double kp = 0.03125;
 double ki = 0.25;
 double kd = 0;
 // Array of pointers to PIDs used throughout
-PID* tuningController[arraySize] = { NULL };
+PID tuningController[arraySize];
 
 // MPU to calibrate, using int0 for interrupts
 MPU6050 mpu;
 
 // Forward declarations
-void switchAndUpdateOffsets(const size_t& index);
-double avgOffsetFromIndex(const size_t& index);
-double avgValueFromIndex(const size_t& index);
+void switchAndUpdateOffsets(const size_t index);
+double avgOffsetFromIndex(const size_t index);
+double avgValueFromIndex(const size_t index);
 void printCalibrationDataToSerial();
+// Reset function, resets to start of program address space
+void software_Reboot()
+{
+  wdt_enable(WDTO_15MS);
+  while (1)
+  {
+  }
+}
 
 void setup()
 {
   // Enable serial
   Serial.begin(115200);
 
-  // Create and setup the PID controllers
+  // Setup the PID controllers
   for (size_t i = 0; i < arraySize; ++i)
   {
-    tuningController[i] = new PID(&(dreceivedData[i]), &(doffsets[i]),
-                                  &(dsetpoint[i]), kp, ki, kd, DIRECT);
-    tuningController[i]->SetOutputLimits(-15000, 15000);
-    tuningController[i]->SetMode(AUTOMATIC);
+    tuningController[i].setup(&(dreceivedData[i]), &(doffsets[i]),
+                              &(dsetpoint[i]), kp, ki, kd, DIRECT);
+    tuningController[i].SetOutputLimits(-15000, 15000);
+    tuningController[i].SetMode(AUTOMATIC);
   }
   // Start the I2C bus
   Wire.begin();
 
   // Start the MPU
-  Serial.println("Initializing MPU");
+#ifdef DEBUG_OUTPUT
+  Serial.println(F("Initializing MPU"));
+#endif // DEBUG_OUTPUT
   mpu.initialize();
   // Wait for a bit while initialising
   delay(10);
   // Check if connection is up, if not retry
-  while (!mpu.testConnection())
+  if (!mpu.testConnection())
   {
-    delay(1000);
-    Serial.println("Retrying MPU connection");
-    mpu.initialize();
-    delay(10);
+#ifdef DEBUG_OUTPUT
+    Serial.println(F("MPU connection failed, reset it!"));
+#endif // DEBUG_OUTPUT
   }
 }
 
 void loop()
 {
   static unsigned long lastSerialUpdate = 0;
-  static const unsigned long deltaTSerialUpdate = 1000;
+  static const unsigned long deltaTSerialUpdate = 200;
   // Get data from MPU
   // [0]: xAccelerometer
   // [1]: yAccelerometer
@@ -96,7 +113,7 @@ void loop()
   // Check and update PIDs
   for (size_t i = 0; i < arraySize; ++i)
   {
-    if (tuningController[i]->Compute())
+    if (tuningController[i].Compute())
     {
       switchAndUpdateOffsets(i);
       // Store the most recently read value and new offset to averaging arrays
@@ -118,7 +135,7 @@ void loop()
   }
 }
 
-void switchAndUpdateOffsets(const size_t& index)
+void switchAndUpdateOffsets(const size_t index)
 {
   offsets[index] = static_cast<int16_t>(doffsets[index]);
   switch (index)
@@ -146,7 +163,7 @@ void switchAndUpdateOffsets(const size_t& index)
   }
 }
 
-double avgOffsetFromIndex(const size_t& index)
+double avgOffsetFromIndex(const size_t index)
 {
   double sum = 0;
   for (size_t i = 0; i < avgArraySize; ++i)
@@ -157,7 +174,7 @@ double avgOffsetFromIndex(const size_t& index)
   return (sum / static_cast<double>(avgArraySize));
 }
 
-double avgValueFromIndex(const size_t& index)
+double avgValueFromIndex(const size_t index)
 {
   double sum = 0;
   for (size_t i = 0; i < avgArraySize; ++i)
@@ -170,20 +187,35 @@ double avgValueFromIndex(const size_t& index)
 
 void printCalibrationDataToSerial()
 {
+#ifdef HUMAN_READABLE_OUTPUT
   Serial.println(
-      "avgXacc \t avgYacc \t avgZacc \t avgXgyro \t avgYgyro \t avgZgyro");
+      F("avgXacc \tavgYacc \tavgZacc \tavgXgyro \tavgYgyro \tavgZgyro"));
   for (size_t i = 0; i < arraySize; ++i)
   {
-    Serial.print(avgValueFromIndex(i));
-    Serial.print("\t");
+    Serial.print(avgValueFromIndex(i), 1);
+    Serial.print("\t\t");
   }
   Serial.println("");
-  Serial.println("avgXaccOff \t avgYaccOff \t avgZaccOff \t avgXgyroOff \t "
-                 "avgXgyroOff \t avgXgyroOff");
+  Serial.println(F("avgXaccOff \tavgYaccOff \tavgZaccOff \tavgXgyroOff \t"
+                   "avgXgyroOff \tavgXgyroOff"));
   for (size_t i = 0; i < arraySize; ++i)
   {
-    Serial.print(avgOffsetFromIndex(i));
-    Serial.print("\t");
+    Serial.print(avgOffsetFromIndex(i), 1);
+    Serial.print("\t\t");
   }
   Serial.println("");
+#endif // HUMAN_READABLE_OUTPUT
+
+#ifdef PARSABLE_OUTPUT
+  for (size_t i = 0; i < arraySize-1; ++i)
+  {
+    Serial.print(avgValueFromIndex(i), 1);
+    Serial.print(",");
+    Serial.print(avgOffsetFromIndex(i),1);
+    Serial.print(",");
+  }
+  Serial.print(avgValueFromIndex(arraySize - 1), 1);
+  Serial.print(",");
+  Serial.println(avgOffsetFromIndex(arraySize - 1), 1);
+#endif // PARSABLE_OUTPUT
 }
