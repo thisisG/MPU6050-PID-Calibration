@@ -2,7 +2,6 @@
 #include "MPU6050.h"
 #include "Wire.h"
 #include "PID_v1.h"
-#include <avr/wdt.h>
 
 // Uncomment to provide human readable output
 //#define HUMAN_READABLE_OUTPUT
@@ -49,14 +48,6 @@ void switchAndUpdateOffsets(const size_t index);
 double avgOffsetFromIndex(const size_t index);
 double avgValueFromIndex(const size_t index);
 void printCalibrationDataToSerial();
-// Reset function, resets to start of program address space
-void software_Reboot()
-{
-  wdt_enable(WDTO_15MS);
-  while (1)
-  {
-  }
-}
 
 void setup()
 {
@@ -81,7 +72,7 @@ void setup()
   mpu.initialize();
   // Wait for a bit while initialising
   delay(10);
-  // Check if connection is up, if not retry
+  // Check if connection is up
   if (!mpu.testConnection())
   {
 #ifdef DEBUG_OUTPUT
